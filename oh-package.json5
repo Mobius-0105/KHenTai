@@ -1,0 +1,9 @@
+{
+  "modelVersion": "6.0.0",
+  "name": "litewm-harmony",
+  "version": "1.0.0",
+  "description": "轻水印 LiteWM 的 HarmonyOS NEXT 移植版：极简水印相机，复刻腾讯水印相机 baseTime 模板",
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "devDependencies": {}
+}

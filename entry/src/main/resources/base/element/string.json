@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "KHenTai：E-Hentai / ExHentai 客户端"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "KHenTai 主入口"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "KHenTai"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# 不混淆（个人项目，便于真机排查崩溃栈）
+-keep-global-name
+-keep-property-name

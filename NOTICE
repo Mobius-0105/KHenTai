@@ -1,0 +1,40 @@
+JHenTai · HarmonyOS
+===================
+
+本工程是 JHenTai 的 HarmonyOS NEXT (ArkTS) 移植版。
+
+上游作品
+--------
+JHenTai — A cross-platform manga app made for e-hentai & exhentai by Flutter
+  Copyright (c) jiangtian616
+  https://github.com/jiangtian616/JHenTai
+  Licensed under the Apache License, Version 2.0
+
+修改说明（Apache-2.0 §4(b)）
+--------------------------
+本工程为**重写移植**，不是上游代码的分支：
+
+* 使用语言不同：上游为 Dart/Flutter，本工程为 ArkTS/HarmonyOS。
+* **未复制任何 Dart 源代码**。网络端点、Cookie 名称（ipb_member_id / ipb_pass_hash /
+  sk / igneous）、HTML 选择器映射、登录与收藏流程，均来自对上游公开源码的阅读与总结，
+  并以 ArkTS 重新实现。
+* 依赖不同：本工程零第三方依赖，仅使用 HarmonyOS SDK 公开 API；上游使用 get / dio /
+  extended_image / drift 等。
+* 功能范围小于上游：未实现下载、归档、种子、评论、标签投票、多语言、多布局阅读等，
+  详见 README 第 2 节。
+
+第三方资源
+----------
+* 应用图标为本工程自绘的图形（书架简笔），不含任何第三方素材。
+* 不打包任何字体文件，界面与正文使用系统字体。
+* 画廊内容由 E-Hentai / ExHentai 提供，本工程不包含、不缓存、不分发其内容。
+
+许可
+----
+本工程以 Apache License 2.0 发布，全文见：
+  https://www.apache.org/licenses/LICENSE-2.0
+
+免责
+----
+本工程仅供个人学习与技术研究使用。使用者需自行确认所在地区的法律法规与站点服务条款，
+并对自己的使用行为负责。

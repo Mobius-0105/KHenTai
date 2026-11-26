@@ -1,0 +1,59 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        // 真机 / 上架：DevEco Studio 7.x（含 HarmonyOS SDK 26）常规构建。
+        "name": "default",
+        "compatibleSdkVersion": "26.0.0(26)",
+        "compileSdkVersion": "26.0.0(26)",
+        "targetSdkVersion": "26.0.0(26)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      },
+      {
+        // 无 HarmonyOS SDK 时的本地命令行验证构建（OpenHarmony 7.0 / API 26）：
+        //   hvigorw --mode module -p product=api26 -p module=entry@default assembleHap
+        "name": "api26",
+        "compatibleSdkVersion": "26.0.0(26)",
+        "compileSdkVersion": "26.0.0(26)",
+        "targetSdkVersion": "26.0.0(26)",
+        "runtimeOS": "OpenHarmony",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "api26"
+          ]
+        }
+      ]
+    }
+  ]
+}
