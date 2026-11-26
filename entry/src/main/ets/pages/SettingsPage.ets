@@ -9,7 +9,9 @@ import { KEY_DOWNLOAD, KEY_IMAGE, KEY_TORRENT, Storage, StorageUsage } from '../
 import { ListStyles } from '../ui/GalleryCard';
 import { MaterialSurface } from '../components/MaterialSurface';
 import { deviceInfo, pasteboard } from '@kit.BasicServicesKit';
+import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
+import { UPDATE_PRIVATE, Update, UpdateError, UpdateInfo } from '../core/Update';
 
 /**
  * 页面数值。
@@ -44,12 +46,6 @@ const BOTTOM_PAD: number = 80;
  */
 const BAR_ROW_HEIGHT: number = 48;
 const FONT_TITLE: number = 22;
-/**
- * 应用版本号：与 AppScope/app.json5 的 versionName 保持一致。
- * 这里手动同步而不是运行期读包信息 —— 读包信息要额外权限与异步时序，
- * 而这个数只出现在「关于」卡里，写错了一眼就能看出来。
- */
-const APP_VERSION: string = '1.8.5';
 /**
  * 危险操作红字。
  *
@@ -158,9 +154,23 @@ export struct SettingsPage {
   @State private storeBusy: boolean = false;
   /** 「数据」卡片里正处于二次确认的键；空串表示没有待确认的操作 */
   @State private dataConfirmKey: string = '';
+  /**
+   * 「关于」卡里的当前版本，形如 `1.33.6 (1002946)`。
+   *
+   * 运行时从 bundleManager 读，不再维护手抄常量 —— 那个常量（1.8.5）在 25 个版本里
+   * 一直没人同步，屏上显示的版本和真装的包对不上，比不显示更糟。
+   */
+  @State private versionText: string = '';
+  /** 检查更新进行中：用来把行文案换成「检查中…」并禁用点击，避免连点发多次请求 */
+  @State private checking: boolean = false;
 
   private toastTimer: number = -1;
   private confirmTimer: number = -1;
+  /**
+   * 纯 versionName（不带 versionCode），只给版本比较用，不参与渲染。
+   * 不放进 @State：它变了不会影响任何节点，多一个可观察字段只是多一次无谓的脏标记。
+   */
+  private versionRaw: string = '';
   /**
    * 「数据」卡片自己的确认计时器。
    *
@@ -189,6 +199,7 @@ export struct SettingsPage {
     this.passHash = Cookies.get('ipb_pass_hash');
     this.igneous = Cookies.get('igneous');
     this.refreshStoreSizes();
+    this.loadVersion();
   }
 
   aboutToDisappear(): void {
@@ -325,6 +336,124 @@ export struct SettingsPage {
     return id.length > 6 ? id.substring(0, 6) + '…' : id;
   }
 
+  // ------------------------------------------------------------ 关于 / 检查更新
+  /**
+   * 读本包的版本号。
+   *
+   * getBundleInfoForSelfSync 是同步的、查自己不需要任何权限，进页面读一次即可，
+   * 不必为它引入异步时序。读失败（理论上只有打包异常）退回占位文案而不是抛出去 ——
+   * 「关于」卡显示不出来不该让整页崩掉。
+   */
+  private loadVersion(): void {
+    try {
+      const info: bundleManager.BundleInfo = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      this.versionRaw = info.versionName;
+      this.versionText = info.versionName + ' (' + info.versionCode.toString() + ')';
+    } catch (e) {
+      // 兜底成 0.0.0：这样任何 Release 都会判成「有新版」，用户至少还能自己下包，
+      // 而不是因为读不到版本号就永远「已是最新」。
+      this.versionRaw = '0.0.0';
+      this.versionText = '未知版本';
+    }
+  }
+
+  /**
+   * 检查更新。
+   *
+   * 结果分四种，全部走系统 toast / 弹窗（不用页内 toast）：这一步可能在弹窗之上，
+   * 而页内 hint 会被弹窗遮住，看起来像「点了没反应」。
+   *
+   * checking 必须在 finally 里复位：失败分支是 return/throw，写在 try 之后会漏掉，
+   * 之后每次点击都会被「进行中」挡掉。
+   */
+  private async doCheckUpdate(): Promise<void> {
+    if (this.checking) {
+      return;
+    }
+    this.checking = true;
+    try {
+      const info: UpdateInfo | null = await Update.checkLatest(this.versionRaw);
+      if (info === null) {
+        this.systemToast('已是最新版本');
+        return;
+      }
+      this.showUpdateDialog(info);
+    } catch (e) {
+      // UpdateError 只带一个种类串；其它意外异常（理论上没有）按网络失败处理，
+      // 不把内部错误码抛给用户。
+      const kind: string = e instanceof UpdateError ? (e as UpdateError).kind : '';
+      this.systemToast(kind === UPDATE_PRIVATE ? '仓库未公开，无法检查更新' : '检查更新失败，请稍后重试');
+    } finally {
+      this.checking = false;
+    }
+  }
+
+  /**
+   * 新版提示。
+   *
+   * 「去下载」放 primaryButton（高亮的默认按钮位）：「稍后」只是不打断用户的出口，
+   * 检查更新的目的就是拿到新包，主按钮不该是「算了」。
+   */
+  private showUpdateDialog(info: UpdateInfo): void {
+    // 走 UIContext.showAlertDialog 而不是全局 AlertDialog.show：
+    // 后者自 API 26 起已废弃，且不绑窗口时在分屏下可能弹到别的窗口。
+    this.getUIContext().showAlertDialog({
+      title: '发现新版本 ' + info.version,
+      message: info.body,
+      primaryButton: {
+        value: '去下载',
+        action: () => {
+          this.openUrl(info.url);
+        }
+      },
+      secondaryButton: {
+        value: '稍后',
+        action: () => {
+        }
+      }
+    });
+  }
+
+  /**
+   * 用系统浏览器打开链接。
+   *
+   * 走 viewData 的隐式 Want，不指定具体应用（系统会让用户选或直接用默认浏览器）。
+   * startAbility 是异步的：同步抛（Want 非法）与异步 reject（没有应用能处理该 uri）
+   * 都要兜住，否则失败时界面一动不动。
+   */
+  private openUrl(url: string): void {
+    if (url.length === 0) {
+      this.systemToast('该版本没有提供下载地址');
+      return;
+    }
+    try {
+      const ctx: common.UIAbilityContext =
+        this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const want: Want = { action: 'ohos.want.action.viewData', uri: url };
+      ctx.startAbility(want).catch(() => {
+        this.systemToast('无法打开浏览器');
+      });
+    } catch (e) {
+      this.systemToast('无法打开浏览器');
+    }
+  }
+
+  /**
+   * 系统 toast。
+   *
+   * 用 UIContext 的 getPromptAction() 而不是全局 promptAction.showToast：
+   * 后者在 API 18 起已标记废弃，且不带 UIContext 时在多窗口下会弹到别的窗口上。
+   */
+  private systemToast(text: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: text, duration: 2000 });
+    } catch (e) {
+      // UIContext 还没绑好（页面已销毁等极端情况）：退回页内 toast，至少不静默
+      this.showToast(text);
+    }
+  }
+
   // ------------------------------------------------------------ 版式小件
   private statusBar(): number {
     const v: number | undefined = AppStorage.get<number>('statusBarHeight');
@@ -420,6 +549,55 @@ export struct SettingsPage {
       // 所以切完要让列表卡片重算一次 chip 文案
       TagTransTick.bump();
       this.showToast(this.langZh ? '标签名将显示中文' : '标签名保持英文原文');
+    })
+  }
+
+  /**
+   * 「当前版本」行：与 langRow 同版式（左标题、右值），右侧是运行时读到的
+   * `versionName (versionCode)`。
+   *
+   * 值从 this.versionText 读而不是当参数传：@Builder 的值参数只在创建时求值一次，
+   * loadVersion() 是在 aboutToAppear 里跑的，传值会让这一行永远停在空串上。
+   */
+  @Builder
+  private versionRow() {
+    Row({ space: 8 }) {
+      Text('当前版本').fontSize(13).fontColor(Theme.text()).layoutWeight(1)
+      Text(this.versionText)
+        .fontSize(12)
+        .fontColor(Theme.subText())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(ROW_H)
+    .padding({ left: 16, right: 16 })
+  }
+
+  /**
+   * 「检查更新」行：右侧平时是 ›，检查中换成「检查中…」并整行禁用。
+   *
+   * 禁用用 .enabled(false) 而不只是 if (this.checking) return：
+   * 只拦回调的话手指按下去仍有水波纹，看起来像「点了没反应」；
+   * enabled 关掉后连按压反馈一起停，用户能明确知道正在等。
+   */
+  @Builder
+  private updateRow() {
+    Row({ space: 8 }) {
+      Text('检查更新')
+        .fontSize(13)
+        .fontColor(this.checking ? Theme.subText() : Theme.text())
+        .layoutWeight(1)
+      Text(this.checking ? '检查中…' : '›')
+        .fontSize(this.checking ? 12 : 16)
+        .fontColor(Theme.subText())
+    }
+    .width('100%')
+    .height(ROW_H)
+    .padding({ left: 16, right: 16 })
+    .enabled(!this.checking)
+    .onClick(() => {
+      this.doCheckUpdate();
     })
   }
 
@@ -1082,20 +1260,31 @@ export struct SettingsPage {
           .margin({ bottom: CARD_GAP })
 
           // ------------------------------------------------------ 关于
+          // 前两行是可操作/可变信息的行（56 高、行间细线），版权与免责声明放在
+          // 同一张卡的下半段，用 12 号首行 + 11 号说明的排版，不占额外一张卡。
           this.groupTitle('关于')
-          Column({ space: 6 }) {
-            Text('KHenTai · HarmonyOS 移植版 ' + APP_VERSION).fontSize(13).fontColor(Theme.text())
-            Text('原项目：github.com/jiangtian616/JHenTai（Apache-2.0）')
-              .fontSize(11)
-              .fontColor(Theme.subText())
-            Text('本移植版用 ArkTS 重写，不包含下载/归档/评论/标签投票等原版高级功能。' +
-              '内容由 E-Hentai / ExHentai 提供，请遵守当地法律与站点规则。')
-              .fontSize(11)
-              .fontColor(Theme.subText())
+          Column() {
+            this.versionRow()
+
+            this.dividerLine()
+            this.updateRow()
+
+            this.dividerLine()
+            Column({ space: 6 }) {
+              Text('KHenTai · HarmonyOS 移植版').fontSize(13).fontColor(Theme.text())
+              Text('原项目：github.com/jiangtian616/JHenTai（Apache-2.0）')
+                .fontSize(11)
+                .fontColor(Theme.subText())
+              Text('本移植版用 ArkTS 重写，不包含下载/归档/评论/标签投票等原版高级功能。' +
+                '内容由 E-Hentai / ExHentai 提供，请遵守当地法律与站点规则。')
+                .fontSize(11)
+                .fontColor(Theme.subText())
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           }
           .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           .backgroundColor(Theme.card())
           .borderRadius(CARD_RADIUS)
           .border({ width: CARD_EDGE, color: Theme.line() })

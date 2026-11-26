@@ -156,6 +156,21 @@ export class Http {
     return Http.request(url, http.RequestMethod.POST, header, body);
   }
 
+  /**
+   * 带自定义请求头的 GET（返回原始 HttpResp，非 200 也不抛）。
+   *
+   * 为什么不直接用 get()：get() 的 buildHeader 写死了 EH 的 UA 与 Accept，
+   * 而 GitHub API 要求专用 UA（缺 UA 直接 403）和 application/vnd.github+json，
+   * 若沿用 EH 的 UA 会被当成普通浏览器抓取，随包附带的 EH Cookie 更不该去第三方域
+   * （isAuthHost 已经挡住，但 UA 也必须换）。
+   *
+   * 这里只透传调用方给的头，一个都不额外注入 —— 调用方看得见自己发了什么，
+   * 排查 404/403 时才不用猜是不是被中间层加了头。
+   */
+  static async getJson(url: string, headers: Record<string, string>): Promise<HttpResp> {
+    return Http.request(url, http.RequestMethod.GET, headers, '');
+  }
+
   /** 图片下载：返回原始字节 */
   static async getBytes(url: string, referer: string = ''): Promise<ArrayBuffer | null> {
     const req: http.HttpRequest = http.createHttp();

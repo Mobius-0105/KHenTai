@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.khentai.harmony",
     "vendor": "jhentai-port",
-    "versionCode": 1002945,
-    "versionName": "1.33.5",
+    "versionCode": 1002946,
+    "versionName": "1.33.6",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
